@@ -28,7 +28,7 @@ from app.services import (
     get_important_status,
 )
 
-from app.services import protected
+from app.services import protected, unsubscribed
 
 router = APIRouter(prefix="/api", tags=["Status"])
 
@@ -65,7 +65,9 @@ async def api_status():
 async def api_results():
     """Get email scan results."""
     try:
-        return _mark_protected(get_scan_results(), "domain")
+        return unsubscribed.annotate_rows(
+            _mark_protected(get_scan_results(), "domain"), "domain"
+        )
     except Exception as e:
         logger.exception("Error getting scan results")
         raise HTTPException(

@@ -501,6 +501,25 @@
                         </div>
 
                         <div class="card">
+                            <div class="card-header tracker-header">
+                                <h3>📭 Unsubscribe tracker</h3>
+                                <span class="tracker-summary" id="trackerSummary"></span>
+                                <button class="btn btn-sm btn-secondary" onclick="GmailCleaner.Tracker.check()">↻ Check now</button>
+                            </div>
+                            <div class="card-body">
+                                <p class="safety-hint" style="margin-top:0">Senders get up to 14 days to stop. After that, anything new from them is flagged 🚨.</p>
+                                <div class="history-list" id="trackerList">
+                                    <p class="safety-empty">Loading...</p>
+                                </div>
+                                <form class="safety-add-row tracker-add" onsubmit="event.preventDefault(); GmailCleaner.Tracker.add();">
+                                    <input type="text" id="trackSenderInput" class="filter-input" placeholder="Unsubscribed somewhere else? e.g. m1.panerabread.com" autocomplete="off" spellcheck="false">
+                                    <input type="date" id="trackSenderDate" class="filter-input tracker-date" title="When you unsubscribed (blank = today)">
+                                    <button type="submit" class="btn btn-secondary btn-sm">Track</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="card">
                             <div class="card-header">
                                 <h3>↩ Recent actions</h3>
                             </div>

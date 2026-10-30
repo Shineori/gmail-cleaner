@@ -159,14 +159,23 @@ GmailCleaner.Scanner = {
 
         GmailCleaner.results.forEach((r, i) => {
             const item = document.createElement('div');
-            item.className = 'result-item';
+            item.className = 'result-item' + (r.unsubscribed_at ? ' is-unsubscribed' : '');
 
             let actionButton;
             let typeLabel;
 
+            const tStatus = GmailCleaner.Tracker.rowStatus(r);
             if (r.protected) {
                 actionButton = `<button class="unsub-btn is-protected-btn" disabled>🛡️ Protected</button>`;
                 typeLabel = `<span class="protected-badge">Protected</span>`;
+            } else if (tStatus) {
+                const label = {
+                    still_sending: `<span class="unsub-badge bad">🚨 Still sending</span>`,
+                    worked: `<span class="unsub-badge">✓ Unsubscribed ${GmailCleaner.Tracker.fmtDate(r.unsubscribed_at)}</span>`,
+                    waiting: `<span class="unsub-badge">⏳ Unsubscribed ${GmailCleaner.Tracker.fmtDate(r.unsubscribed_at)}</span>`,
+                }[tStatus];
+                typeLabel = label;
+                actionButton = `<button class="unsub-btn cleanup-btn" id="unsub-${i}" onclick="GmailCleaner.Scanner.cleanupSender(${i})" title="Move this sender's old emails to Trash">🧹 Clean up</button>`;
             } else if (r.type === 'one-click') {
                 actionButton = `<button class="unsub-btn one-click" id="unsub-${i}" onclick="GmailCleaner.Scanner.autoUnsubscribe(${i})">✓ Unsubscribe</button>`;
                 typeLabel = `<span class="type-badge type-auto">Auto</span>`;
@@ -215,7 +224,13 @@ GmailCleaner.Scanner = {
                 btn.textContent = '✓ Done!';
                 btn.classList.remove('one-click');
                 btn.classList.add('success');
-                GmailCleaner.UI.showSuccessToast(`Successfully unsubscribed from ${r.domain}. You should stop receiving their emails.`);
+                r.unsubscribed_at = new Date().toISOString();
+                const domain = GmailCleaner.UI.escapeHtml(r.domain);
+                GmailCleaner.UI.showToast(
+                    `Unsubscribed from ${domain}. I'll flag them if they keep sending after 14 days. ` +
+                    `<button class="toast-undo" onclick="GmailCleaner.Scanner.cleanupSender(${index}, this)">🧹 Trash their ${r.count} old emails</button>`,
+                    'success', 12000
+                );
             } else {
                 btn.textContent = 'Open →';
                 btn.classList.remove('one-click');
@@ -237,7 +252,24 @@ GmailCleaner.Scanner = {
         window.open(r.link, '_blank');
         btn.textContent = 'Opened ↗';
         btn.classList.add('success');
+        // Track it: the tracker will tell us later whether the page actually worked
+        if (!r.unsubscribed_at) {
+            r.unsubscribed_at = new Date().toISOString();
+            GmailCleaner.Tracker.track(r.domain, 'link').catch(() => {});
+        }
         // Keep button clickable so user can re-open if needed
+    },
+
+    async cleanupSender(index, toastBtn) {
+        const r = GmailCleaner.results[index];
+        if (!r) return;
+        const done = await GmailCleaner.Tracker.cleanup(r.domain);
+        if (done) {
+            if (toastBtn) { toastBtn.disabled = true; toastBtn.textContent = '✓ Trashed'; }
+            GmailCleaner.results = GmailCleaner.results.filter((_, i) => i !== index);
+            this.updateResultsBadge && this.updateResultsBadge();
+            this.displayResults();
+        }
     },
 
     toggleSelectAll() {

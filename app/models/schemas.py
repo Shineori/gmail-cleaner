@@ -209,6 +209,18 @@ class PreviewRequest(BaseModel):
     filters: Optional[FiltersModel] = None
 
 
+class UnsubscribedRequest(BaseModel):
+    """Track (or forget) an unsubscribe for a sender domain or address."""
+
+    sender: str = Field(..., min_length=3, max_length=254)
+    method: Literal["one-click", "link", "manual"] = "manual"
+    date: Optional[str] = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="When you unsubscribed (YYYY-MM-DD). Defaults to now.",
+    )
+
+
 class OAuthPasteRequest(BaseModel):
     """The address Google redirected to, pasted back in by the user."""
 

@@ -53,7 +53,7 @@ GmailCleaner.Safety = {
     },
 
     async refresh() {
-        await Promise.all([this.loadProtected(), this.loadHistory()]);
+        await Promise.all([this.loadProtected(), this.loadHistory(), GmailCleaner.Tracker.check()]);
     },
 
     // ---------- protected senders ----------
@@ -469,5 +469,146 @@ GmailCleaner.RemoteSignIn = {
             msg.className = 'remote-msg bad';
             msg.textContent = e.message;
         }
+    },
+};
+
+// ===================================================================
+// Unsubscribe tracker
+// ===================================================================
+
+GmailCleaner.Tracker = {
+    GRACE_DAYS: 14,
+
+    fmtDate(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    },
+
+    /** Status from a scan row alone (no Gmail call): did mail arrive after the grace period? */
+    rowStatus(r) {
+        if (!r.unsubscribed_at) return null;
+        const unsub = new Date(r.unsubscribed_at);
+        const graceEnd = new Date(unsub.getTime() + this.GRACE_DAYS * 86400000);
+        const newest = [r.first_date, r.last_date]
+            .map(d => new Date(d))
+            .filter(d => !isNaN(d))
+            .sort((a, b) => b - a)[0];
+        if (newest && newest > graceEnd) return 'still_sending';
+        return Date.now() >= graceEnd ? 'worked' : 'waiting';
+    },
+
+    async track(sender, method = 'manual', date = null) {
+        return GmailCleaner.api('/api/unsubscribed', {
+            method: 'POST',
+            body: JSON.stringify({ sender, method, date }),
+        });
+    },
+
+    async add() {
+        const input = document.getElementById('trackSenderInput');
+        const dateInput = document.getElementById('trackSenderDate');
+        const sender = (input.value || '').trim();
+        if (!sender) return;
+        try {
+            await this.track(sender, 'manual', dateInput.value || null);
+            input.value = '';
+            GmailCleaner.UI.showSuccessToast(`📭 Tracking ${GmailCleaner.UI.escapeHtml(sender)}`);
+            this.check();
+        } catch (e) {
+            GmailCleaner.UI.showErrorToast(GmailCleaner.UI.escapeHtml(e.message));
+        }
+    },
+
+    async forget(sender) {
+        await GmailCleaner.api('/api/unsubscribed/forget', {
+            method: 'POST',
+            body: JSON.stringify({ sender }),
+        });
+        (GmailCleaner.results || []).forEach(r => { if (r.domain === sender) delete r.unsubscribed_at; });
+        this.check();
+    },
+
+    async check() {
+        const list = document.getElementById('trackerList');
+        const summary = document.getElementById('trackerSummary');
+        if (!list) return;
+        list.innerHTML = '<p class="safety-empty">Checking Gmail for mail since each unsubscribe...</p>';
+        try {
+            const data = await GmailCleaner.api('/api/unsubscribed/check');
+            if (!data.success) {
+                list.innerHTML = `<p class="safety-empty">${GmailCleaner.UI.escapeHtml(data.message)}</p>`;
+                return;
+            }
+            this.GRACE_DAYS = data.grace_days || this.GRACE_DAYS;
+            this.render(data.senders);
+            const bad = data.senders.filter(s => s.status === 'still_sending').length;
+            summary.innerHTML = data.senders.length
+                ? `${data.senders.length} tracked${bad ? ` · <span class="tracker-bad-count">${bad} still sending</span>` : ''}`
+                : '';
+        } catch (e) {
+            list.innerHTML = `<p class="safety-empty">${GmailCleaner.UI.escapeHtml(e.message)}</p>`;
+        }
+    },
+
+    render(senders) {
+        const esc = GmailCleaner.UI.escapeHtml;
+        const list = document.getElementById('trackerList');
+        if (!senders.length) {
+            list.innerHTML = `<p class="safety-empty">Nothing tracked yet. Every unsubscribe you do in the app shows up here, and gets checked for mail that keeps coming.</p>`;
+            return;
+        }
+        const how = { 'one-click': 'one-click', link: 'unsubscribe link', manual: 'added by hand' };
+        list.innerHTML = senders.map(s => {
+            let pill;
+            if (s.status === 'still_sending') {
+                pill = `<span class="tracker-pill bad">🚨 Still sending · ${s.late_count}${s.late_count >= 100 ? '+' : ''} after the grace period</span>`;
+            } else if (s.status === 'worked') {
+                pill = `<span class="tracker-pill good">✅ Worked · nothing new after ${this.fmtDate(s.grace_ends)}</span>`;
+            } else if (s.status === 'waiting') {
+                const since = s.since_count ? ` · ${s.since_count} since (normal)` : '';
+                pill = `<span class="tracker-pill wait">⏳ Waiting · day ${s.day} of ${s.grace_days}${since}</span>`;
+            } else {
+                pill = `<span class="tracker-pill wait" title="${esc(s.error || '')}">⚠️ Couldn't check</span>`;
+            }
+            const gmail = `https://mail.google.com/mail/u/0/#search/${encodeURIComponent('from:' + s.sender)}`;
+            const clean = s.status === 'still_sending'
+                ? `<button class="btn btn-sm btn-secondary" data-clean="${esc(s.sender)}">🧹 Trash all</button>`
+                : '';
+            return `
+                <div class="history-item tracker-item ${s.status}">
+                    <div class="history-icon">📭</div>
+                    <div class="history-body">
+                        <div class="history-title">${esc(s.sender)}</div>
+                        <div class="history-sub">Unsubscribed ${this.fmtDate(s.unsubscribed_at)} · ${how[s.method] || s.method}</div>
+                        <div>${pill}</div>
+                    </div>
+                    <div class="history-actions tracker-actions">
+                        ${clean}
+                        <a class="btn btn-sm btn-secondary" href="${gmail}" target="_blank" rel="noopener" title="Open this sender in Gmail">Gmail ↗</a>
+                        <button class="btn btn-sm btn-secondary" data-forget="${esc(s.sender)}" title="Stop tracking">✕</button>
+                    </div>
+                </div>`;
+        }).join('');
+        list.querySelectorAll('[data-forget]').forEach(b => b.addEventListener('click', () => this.forget(b.dataset.forget)));
+        list.querySelectorAll('[data-clean]').forEach(b => b.addEventListener('click', () => this.cleanup(b.dataset.clean)));
+    },
+
+    /** Preview, then move every email from a sender to Trash (with undo). */
+    async cleanup(sender) {
+        if (!(await GmailCleaner.Preview.confirm({ action: 'trash', senders: [sender] }))) return false;
+        try {
+            const r = await GmailCleaner.api('/api/delete-emails', {
+                method: 'POST',
+                body: JSON.stringify({ sender }),
+            });
+            if (r.success) {
+                GmailCleaner.Safety.showUndoToast(r.message, r.history_id);
+                return true;
+            }
+            GmailCleaner.UI.showErrorToast(GmailCleaner.UI.escapeHtml(r.message));
+        } catch (e) {
+            GmailCleaner.UI.showErrorToast(GmailCleaner.UI.escapeHtml(e.message));
+        }
+        return false;
     },
 };

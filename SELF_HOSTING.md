@@ -7,6 +7,7 @@ This fork of [Gururagavendra/gmail-cleaner](https://github.com/Gururagavendra/gm
 | 🛡️ **Protected senders** | Addresses or domains (`njit.edu`, `boss@company.com`) that Delete, Archive, Mark as Read and Unsubscribe always skip, even when selected. Enforced on the server twice: excluded from the Gmail search, then every message's real `From` is re-checked before anything changes. If the list file is unreadable, actions refuse to run. |
 | ↩ **Undo + history** | Every trash / archive / mark-read run is saved with the exact message IDs it touched (`data/history.json`, last 50). Undo puts them back. Trash undo works for 30 days (Gmail's Trash limit). |
 | 👀 **Preview** | Before anything runs you see the exact count, a per-sender breakdown, which protected senders will be skipped, and sample subject lines. Nothing changes until you confirm. |
+| 📭 **Unsubscribe tracker** | Remembers every unsubscribe (`data/unsubscribed.json`) and checks Gmail for mail that arrives after it. Senders get a 14-day grace period (the US legal limit is 10 business days); after that they show ✅ Worked or 🚨 Still sending. Scan results show the same badges, and a "Trash their old emails" button follows every unsubscribe. |
 | 🔐 **Login gate** | Optional [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/) check (use Authentik or any IdP behind it). The app verifies the signed Access token on every request, so going around the tunnel straight to the port gets a 403. Cross-site POSTs are always blocked. |
 
 Smaller changes: date picker served locally (no CDN), hardened Dockerfile (non-root, pinned `uv`, no dev deps, healthcheck), `/healthz` endpoint, fixes for sideways scrolling on phones.
@@ -107,6 +108,7 @@ The token is saved in `data/token.json`. The pasted address only works for the s
 | `token.json` | Gmail OAuth token. Treat like a password. |
 | `protected_senders.json` | `{"senders": [...]}` |
 | `history.json` | Last 50 actions with message IDs, for undo |
+| `unsubscribed.json` | Who you unsubscribed from and when, for the tracker |
 
 Back up the whole folder if you care about the history and protected list.
 
@@ -119,4 +121,6 @@ Back up the whole folder if you care about the history and protected list.
 | "No sign-in is waiting" | The 5-minute window ran out. Click Sign in again. |
 | `PermissionError` writing `data/...` | `sudo chown 1000:1000 data` |
 | Signed out every 7 days | Consent screen is in Testing mode (see step 1). |
+| Stuck on "Code received, finishing sign-in..." and the logs say `Gmail API has not been used in project ...` | The Gmail API isn't enabled in your Google Cloud project. Enable it from the link in the log, wait a few minutes, reload. |
+| "Could not get the Google link" / "Can't read credentials.json" | The container runs as uid 1000: `sudo chown 1000:1000 credentials.json` |
 | "Protected senders list is unreadable" | `data/protected_senders.json` is corrupted. Fix or delete it; actions stay blocked until then, on purpose. |

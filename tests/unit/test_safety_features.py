@@ -77,6 +77,10 @@ class FakeGmail:
                 ok = "UNREAD" in msg["labels"]
             elif t == "in:inbox":
                 ok = "INBOX" in msg["labels"]
+            elif t in ("in:trash", "in:spam"):
+                ok = t[3:].upper() in msg["labels"]
+            elif t.startswith("after:"):
+                ok = msg.get("ts", 0) > int(t[6:])
             else:
                 ok = True
             if ok == neg:
@@ -632,3 +636,91 @@ class TestSignInErrors:
             auth.os, "access", lambda p, mode: not (mode == auth.os.W_OK and str(p) == str(tmp_path))
         )
         assert auth.get_web_auth_status()["data_writable"] is False
+
+
+# ------------------------------------------------------ unsubscribe tracker
+
+
+class TestUnsubscribeTracker:
+    NOW = dt.datetime(2026, 11, 30, tzinfo=dt.timezone.utc)
+
+    def _inbox(self, *offsets_days, sender="news@m1.panerabread.com", base=None):
+        base = base or dt.datetime(2026, 10, 30, tzinfo=dt.timezone.utc)
+        return FakeGmail([
+            {"id": f"x{i}", "sender": sender, "ts": int((base + dt.timedelta(days=d)).timestamp())}
+            for i, d in enumerate(offsets_days)
+        ])
+
+    def _track(self):
+        from app.services import unsubscribed
+        when = dt.datetime(2026, 10, 30, 12, tzinfo=dt.timezone.utc)
+        unsubscribed.record("m1.panerabread.com", "one-click", when)
+        return unsubscribed
+
+    def test_worked(self):
+        u = self._track()
+        svc = self._inbox(-20, -5, 0.2)  # old mail + one right before unsubscribing
+        [r] = u.check_all(svc, now=self.NOW)
+        assert r["status"] == "worked" and r["late_count"] == 0
+
+    def test_still_sending(self):
+        u = self._track()
+        svc = self._inbox(-3, 2, 20, 25)
+        [r] = u.check_all(svc, now=self.NOW)
+        assert r["status"] == "still_sending"
+        assert r["since_count"] == 3 and r["late_count"] == 2
+
+    def test_waiting_inside_grace_period(self):
+        u = self._track()
+        svc = self._inbox(1, 3)
+        [r] = u.check_all(svc, now=dt.datetime(2026, 11, 5, tzinfo=dt.timezone.utc))
+        assert r["status"] == "waiting" and r["since_count"] == 2 and r["late_count"] == 0
+        assert r["day"] == 6
+
+    def test_trashed_mail_does_not_count(self):
+        u = self._track()
+        svc = self._inbox(20)
+        svc.msgs["x0"]["labels"].add("TRASH")
+        [r] = u.check_all(svc, now=self.NOW)
+        assert r["status"] == "worked"
+
+    def test_unsubscribe_success_records(self):
+        from app.services import unsubscribed
+        from app.services.gmail import unsubscribe as unsub_mod
+
+        class Resp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        with patch.object(unsub_mod, "validate_unsafe_url", side_effect=lambda u: u), \
+             patch.object(unsub_mod.urllib.request, "urlopen", return_value=Resp()):
+            r = unsub_mod.unsubscribe_single("m1.panerabread.com", "https://x.example/u")
+        assert r["success"]
+        assert unsubscribed.load()["m1.panerabread.com"]["method"] == "one-click"
+
+    def test_failed_unsubscribe_not_recorded(self):
+        from app.services import unsubscribed
+        from app.services.gmail import unsubscribe as unsub_mod
+
+        with patch.object(unsub_mod, "validate_unsafe_url", side_effect=ValueError("blocked")):
+            unsub_mod.unsubscribe_single("evil.example", "https://10.0.0.1/u")
+        assert unsubscribed.load() == {}
+
+    def test_api_track_forget_and_scan_annotation(self):
+        from app.core import state as st
+        from app.main import app
+
+        c = TestClient(app)
+        r = c.post("/api/unsubscribed", json={"sender": "M1.PaneraBread.com", "date": "2026-10-30"})
+        assert r.status_code == 200 and r.json()["entry"]["sender"] == "m1.panerabread.com"
+        assert c.post("/api/unsubscribed", json={"sender": "nope", "date": None}).status_code == 400
+        assert c.post("/api/unsubscribed", json={"sender": "a.com", "date": "2999-01-01"}).status_code == 400
+
+        st.scan_results = [{"domain": "m1.panerabread.com", "count": 3}, {"domain": "other.com"}]
+        rows = c.get("/api/results").json()
+        assert rows[0]["unsubscribed_at"].startswith("2026-10-30")
+        assert "unsubscribed_at" not in rows[1]
+
+        assert c.post("/api/unsubscribed/forget", json={"sender": "m1.panerabread.com"}).json() == {"success": True}
+        assert c.get("/api/unsubscribed").json()["senders"] == []

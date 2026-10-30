@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional Cloudflare Access JWT verification (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ACCESS_ALLOWED_EMAILS`) and cross-site request blocking
 - Remote sign-in: paste Google's redirect address to finish OAuth when the app runs on a server
 - `/healthz` endpoint, `docker-compose.server.yml`, `SELF_HOSTING.md`
+- Unsubscribe tracker: remembers unsubscribes, checks Gmail after a 14-day grace period and flags senders that keep sending; badges in scan results; "trash their old emails" right after unsubscribing
+- Sign-in problems (unreadable credentials.json, unwritable data folder, Google errors after pasting) are shown on the page
 
 ### Changed (Shineori fork)
 - Dockerfile runs as non-root, pins `uv`, installs without dev dependencies, adds a healthcheck

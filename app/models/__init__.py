@@ -16,6 +16,7 @@ from .schemas import (
     ProtectedSenderRequest,
     PreviewRequest,
     OAuthPasteRequest,
+    UnsubscribedRequest,
     StatusResponse,
     AuthStatusResponse,
     ScanStatusResponse,

@@ -8,7 +8,7 @@ import logging
 import urllib.error
 import urllib.request
 
-from app.services import protected
+from app.services import protected, unsubscribed
 from app.services.gmail.helpers import validate_unsafe_url
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ def unsubscribe_single(domain: str, link: str) -> dict:
         try:
             with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
                 if response.status in [200, 201, 202, 204]:
+                    unsubscribed.record(domain, "one-click")
                     return {
                         "success": True,
                         "message": "Unsubscribed successfully",
@@ -89,6 +90,7 @@ def unsubscribe_single(domain: str, link: str) -> dict:
         try:
             with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
                 if response.status in [200, 201, 202, 204, 301, 302]:
+                    unsubscribed.record(domain, "link")
                     return {
                         "success": True,
                         "message": "Unsubscribed (confirmation may be needed)",

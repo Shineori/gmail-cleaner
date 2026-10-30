@@ -456,3 +456,121 @@
     margin-bottom: 12px;
     overflow-wrap: anywhere;
 }
+
+/* ---------- Unsubscribe tracker ---------- */
+.tracker-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.tracker-header h3 {
+    margin-right: auto;
+}
+
+.tracker-summary {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.tracker-bad-count {
+    color: var(--danger-color);
+    font-weight: 500;
+}
+
+.tracker-pill {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+    font-size: 12px;
+    background: var(--hover-bg);
+    color: var(--text-secondary);
+}
+
+.tracker-pill.good {
+    background: #e6f4ea;
+    color: #137333;
+}
+
+.tracker-pill.bad {
+    background: #fce8e6;
+    color: #c5221f;
+    font-weight: 500;
+}
+
+.tracker-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.tracker-actions a.btn {
+    text-decoration: none;
+}
+
+.tracker-add {
+    margin-top: 14px;
+}
+
+.tracker-date {
+    flex: 0 0 150px;
+}
+
+.unsub-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: var(--radius-full);
+    background: var(--hover-bg);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    vertical-align: middle;
+}
+
+.unsub-badge.bad {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.result-item.is-unsubscribed .result-subject,
+.result-item.is-unsubscribed .result-meta {
+    opacity: 0.6;
+}
+
+.unsub-btn.cleanup-btn {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+@media (max-width: 600px) {
+    .tracker-date {
+        flex: 1 1 100%;
+    }
+
+    .tracker-item {
+        flex-wrap: wrap;
+    }
+
+    .tracker-actions {
+        width: 100%;
+        justify-content: flex-start;
+        padding-left: 44px;
+    }
+}
+
+/* Let the tracker badge sit under the sender name instead of being cut off */
+.result-item.is-unsubscribed .result-sender {
+    white-space: normal;
+    overflow: visible;
+}
+
+.result-item.is-unsubscribed .result-sender .unsub-badge {
+    display: block;
+    width: fit-content;
+    margin: 2px 0 0;
+}
