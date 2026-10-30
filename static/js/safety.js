@@ -378,6 +378,10 @@ GmailCleaner.RemoteSignIn = {
                     this.setError(null);
                     return;
                 }
+                if (s.data_writable === false) {
+                    lastError = "The app can't write to its data folder, so it couldn't save your sign-in. On the server run: sudo chown -R 1000:1000 data, then try again.";
+                    break;
+                }
                 if (s.has_credentials && s.credentials_readable === false) {
                     lastError = "The app can't read credentials.json. On the server run: sudo chown 1000:1000 credentials.json, then try again.";
                     break;
@@ -394,6 +398,33 @@ GmailCleaner.RemoteSignIn = {
         link.textContent = 'Could not get the Google link.';
         this.setError(lastError || 'No details were reported. Check: docker logs gmail-cleaner');
         GmailCleaner.Auth.resetSignInButton();
+    },
+
+    /** After a paste: wait for the server to finish, and report any failure. */
+    async watchFinish(msg) {
+        for (let i = 0; i < 40; i++) {
+            await new Promise(r => setTimeout(r, 750));
+            try {
+                const auth = await GmailCleaner.api('/api/auth-status');
+                if (auth.logged_in) {
+                    msg.className = 'remote-msg ok';
+                    msg.textContent = 'Signed in!';
+                    this.hide();
+                    GmailCleaner.Auth.updateUI(auth);
+                    return;
+                }
+                const s = await GmailCleaner.api('/api/web-auth-status');
+                if (s.auth_error && !s.in_progress) {
+                    msg.className = 'remote-msg bad';
+                    msg.textContent = '';
+                    this.setError(s.auth_error);
+                    GmailCleaner.Auth.resetSignInButton();
+                    return;
+                }
+            } catch (_) { /* keep waiting */ }
+        }
+        msg.className = 'remote-msg bad';
+        msg.textContent = 'Still not signed in after 30 seconds. Check: docker logs gmail-cleaner';
     },
 
     /** Show (or clear) a sign-in problem inside the panel. */
@@ -430,7 +461,10 @@ GmailCleaner.RemoteSignIn = {
             });
             msg.className = 'remote-msg ' + (r.success ? 'ok' : 'bad');
             msg.textContent = r.message;
-            if (r.success) input.value = '';
+            if (r.success) {
+                input.value = '';
+                this.watchFinish(msg);
+            }
         } catch (e) {
             msg.className = 'remote-msg bad';
             msg.textContent = e.message;

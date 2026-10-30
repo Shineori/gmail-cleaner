@@ -623,3 +623,12 @@ class TestSignInErrors:
         with patch.object(actions, "get_gmail_service", return_value=started):
             r = TestClient(app).post("/api/sign-in")
         assert r.json() == {"status": "signing_in"}
+
+    def test_web_auth_status_reports_unwritable_data_dir(self, tmp_path, monkeypatch):
+        from app.services import auth
+
+        monkeypatch.setattr(settings, "token_file", str(tmp_path / "tok.json"))
+        monkeypatch.setattr(
+            auth.os, "access", lambda p, mode: not (mode == auth.os.W_OK and str(p) == str(tmp_path))
+        )
+        assert auth.get_web_auth_status()["data_writable"] is False
