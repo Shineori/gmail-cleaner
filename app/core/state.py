@@ -30,6 +30,8 @@ class AppState:
             "done": False,
             "error": None,
             "marked_count": 0,
+            "skipped_protected": 0,
+            "history_id": None,
         }
 
         # Delete state
@@ -142,6 +144,9 @@ class AppState:
             "deleted_count": 0,
             "total_senders": 0,
             "current_sender": 0,
+            "skipped_senders": [],
+            "skipped_protected": 0,
+            "history_id": None,
         }
 
     def reset_download(self):
@@ -178,6 +183,9 @@ class AppState:
             "archived_count": 0,
             "total_senders": 0,
             "current_sender": 0,
+            "skipped_senders": [],
+            "skipped_protected": 0,
+            "history_id": None,
         }
 
     def reset_important(self):

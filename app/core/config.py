@@ -47,9 +47,37 @@ class Settings(BaseSettings):
     credentials_file: str = "credentials.json"
     token_file: str = "token.json"
 
+    # Where protected_senders.json and history.json live.
+    # Empty = /app/data in Docker, ./data when running locally.
+    data_dir: str = ""
+
+    # Cloudflare Access gate (Authentik as the identity provider).
+    # When access_team_domain and access_aud are set, every request must carry
+    # a valid Cf-Access-Jwt-Assertion header or it gets a 403.
+    access_team_domain: str = Field(
+        default="",
+        description="Cloudflare Access team domain, e.g. myteam.cloudflareaccess.com",
+    )
+    access_aud: str = Field(
+        default="", description="Application Audience (AUD) tag from Cloudflare Access"
+    )
+    access_allowed_emails: str = Field(
+        default="",
+        description="Optional comma-separated list of emails allowed in (extra check on top of the Access policy)",
+    )
+
+    @property
+    def access_gate_enabled(self) -> bool:
+        return bool(self.access_team_domain.strip() and self.access_aud.strip())
+
     def __init__(self, **kwargs):
         """Initialize settings and auto-detect data directory for token persistence."""
         super().__init__(**kwargs)
+        if not self.data_dir:
+            if os.path.isdir("/app/data"):
+                self.data_dir = "/app/data"
+            else:
+                self.data_dir = os.path.abspath("data")
         # Auto-detect /app/data directory in Docker and use it for token_file
         # This allows token.json to persist across container restarts
         if os.path.exists("/app/data") and os.path.isdir("/app/data"):

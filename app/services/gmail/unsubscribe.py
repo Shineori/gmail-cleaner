@@ -8,6 +8,7 @@ import logging
 import urllib.error
 import urllib.request
 
+from app.services import protected
 from app.services.gmail.helpers import validate_unsafe_url
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,19 @@ def unsubscribe_single(domain: str, link: str) -> dict:
     """Attempt to unsubscribe from a single sender."""
     if not link:
         return {"success": False, "message": "No unsubscribe link provided"}
+
+    try:
+        if protected.is_protected(domain or "", protected.load()):
+            return {
+                "success": False,
+                "protected": True,
+                "message": f"{domain} is on your protected senders list",
+            }
+    except protected.ProtectedListError:
+        return {
+            "success": False,
+            "message": "Protected senders list is unreadable, refusing to unsubscribe",
+        }
 
     # Handle mailto: links
     if link.startswith("mailto:"):

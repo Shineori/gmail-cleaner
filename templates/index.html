@@ -9,9 +9,10 @@
     <link rel="stylesheet" href="/static/css/layout.css?v={{ cache_bust }}">
     <link rel="stylesheet" href="/static/css/filters.css?v={{ cache_bust }}">
     <link rel="stylesheet" href="/static/css/components.css?v={{ cache_bust }}">
+    <link rel="stylesheet" href="/static/css/safety.css?v={{ cache_bust }}">
     <link rel="stylesheet" href="/static/css/responsive.css?v={{ cache_bust }}">
     <!-- Litepicker Date Range Picker -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker@latest/dist/litepicker.css">
+    <link rel="stylesheet" href="/static/vendor/litepicker/litepicker.css">
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -69,6 +70,12 @@
                             <path fill="currentColor" d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
                         </svg>
                         <span>Mark as Read</span>
+                    </a>
+                    <a href="#" class="nav-item" data-view="safety">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+                        </svg>
+                        <span>Safety &amp; Undo</span>
                     </a>
                 </nav>
 
@@ -170,6 +177,22 @@
                                 </svg>
                                 Sign in with Google
                             </button>
+
+                            <div class="remote-signin hidden" id="remoteSignIn">
+                                <h4>Finish signing in</h4>
+                                <ol>
+                                    <li><a id="remoteAuthLink" class="remote-link disabled" href="#" target="_blank" rel="noopener">Preparing Google link...</a></li>
+                                    <li>Approve access. Google then sends you to a <code>localhost:8767</code> page that won't load. That's expected.</li>
+                                    <li>Copy that page's full address from the address bar and paste it here:
+                                        <div class="remote-paste-row">
+                                            <input type="text" id="oauthPasteInput" class="filter-input" placeholder="http://localhost:8767/?state=...&amp;code=..." autocomplete="off" spellcheck="false">
+                                            <button class="btn btn-primary btn-sm" onclick="GmailCleaner.RemoteSignIn.submit()">Finish sign-in</button>
+                                        </div>
+                                        <div class="remote-msg" id="oauthPasteMsg"></div>
+                                    </li>
+                                </ol>
+                                <p class="remote-foot">Using the app on the same computer it runs on? The page loads by itself and you're done.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -454,6 +477,41 @@
                     </div>
                 </div>
 
+                <!-- Safety & Undo View -->
+                <div class="view hidden" id="safetyView">
+                    <div class="content-header">
+                        <h1>Safety &amp; Undo</h1>
+                        <p>Senders you never want touched, and a history of every change with one-click undo</p>
+                    </div>
+
+                    <div class="safety-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>🛡️ Protected senders <span class="count-pill" id="protectedCount">0</span></h3>
+                            </div>
+                            <div class="card-body">
+                                <form class="safety-add-row" onsubmit="event.preventDefault(); GmailCleaner.Safety.addProtected();">
+                                    <input type="text" id="protectedInput" class="filter-input" placeholder="njit.edu or someone@example.com" autocomplete="off" spellcheck="false">
+                                    <button type="submit" class="btn btn-primary btn-sm">Protect</button>
+                                </form>
+                                <p class="safety-hint">Protected senders are skipped by Delete, Archive, Mark as Read and Unsubscribe, even when selected. A domain like <code>njit.edu</code> also covers <code>cs.njit.edu</code>.</p>
+                                <div class="protected-list" id="protectedList"></div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>↩ Recent actions</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="history-list" id="historyList">
+                                    <p class="safety-empty">Loading...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 </div>
             </main>
         </div>
@@ -468,7 +526,8 @@
     <script src="/static/js/markread.js?v={{ cache_bust }}"></script>
     <script src="/static/js/delete.js?v={{ cache_bust }}"></script>
     <script src="/static/js/labels.js?v={{ cache_bust }}"></script>
+    <script src="/static/js/safety.js?v={{ cache_bust }}"></script>
     <!-- Litepicker Date Range Picker Library -->
-    <script src="https://cdn.jsdelivr.net/npm/litepicker@latest/dist/litepicker.js"></script>
+    <script src="/static/vendor/litepicker/litepicker.js"></script>
 </body>
 </html>

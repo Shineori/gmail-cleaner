@@ -24,3 +24,12 @@ Thumbs.db
 
 # GitHub Pages (not needed in Docker)
 docs/
+
+# Fork: keep local state and dev-only files out of the image
+.venv/
+data/
+.env
+tests/
+test-plan/
+media/
+.pytest_cache/

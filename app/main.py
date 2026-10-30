@@ -14,7 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.core import settings
-from app.api import status_router, actions_router
+from app.core.access import AccessGateMiddleware
+from app.api import status_router, actions_router, safety_router
 
 templates = Jinja2Templates(directory="templates")
 
@@ -134,12 +135,21 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
+    # Login gate (Cloudflare Access JWT) + cross-site request blocking
+    app.add_middleware(AccessGateMiddleware)
+
     # Mount static files
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
     # Include API routers
     app.include_router(status_router)
     app.include_router(actions_router)
+    app.include_router(safety_router)
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz():
+        """Unauthenticated liveness check for Uptime Kuma."""
+        return {"status": "ok"}
 
     # HTML routes
     @app.get("/", include_in_schema=False)
@@ -148,7 +158,11 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             request,
             "index.html",
-            {"cache_bust": STARTUP_CACHE_BUST, "version": settings.app_version},
+            {
+                "cache_bust": STARTUP_CACHE_BUST,
+                "version": settings.app_version,
+                "user_email": getattr(request.state, "user_email", None),
+            },
         )
 
     return app

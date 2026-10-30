@@ -7,8 +7,10 @@ Functions for marking emails as read.
 from typing import Optional
 
 from app.core import state
+from app.services import history, protected
 from app.services.auth import get_gmail_service
 from app.services.gmail.helpers import build_gmail_query
+from app.services.gmail.safety import filter_protected_ids
 
 
 def get_unread_count() -> dict:
@@ -47,7 +49,18 @@ def mark_emails_as_read(count: int = 100, filters: Optional[dict] = None):
         return
 
     state.reset_mark_read()
+
+    try:
+        protected_entries = protected.load()
+    except protected.ProtectedListError as e:
+        state.mark_read_status["error"] = (
+            f"Protected senders list is unreadable, nothing was changed ({e})"
+        )
+        state.mark_read_status["done"] = True
+        return
+
     state.mark_read_status["message"] = "Connecting to Gmail..."
+    marked_ids: list[str] = []
 
     service, error = get_gmail_service()
     if error:
@@ -62,12 +75,14 @@ def mark_emails_as_read(count: int = 100, filters: Optional[dict] = None):
         query = "is:unread"
         if filter_query := build_gmail_query(filters):
             query = f"{query} {filter_query}"
+        query = protected.with_protection(query, protected_entries)
 
         # count=0 means "all" - no limit
         mark_all = count == 0
         page_size = 500
         batch_size = 100
         marked = 0
+        skipped_total = 0
         remaining = count  # Only used when not mark_all
         page_token = None
 
@@ -95,16 +110,22 @@ def mark_emails_as_read(count: int = 100, filters: Optional[dict] = None):
                 messages = messages[:remaining]
                 remaining -= len(messages)
 
+            # Safety net: drop messages whose real sender is protected
+            page_ids, skipped = filter_protected_ids(
+                service, [msg["id"] for msg in messages], protected_entries
+            )
+            skipped_total += skipped
+
             # Mark this page in batches of 100
-            for i in range(0, len(messages), batch_size):
-                batch = messages[i : i + batch_size]
-                ids = [msg["id"] for msg in batch]
+            for i in range(0, len(page_ids), batch_size):
+                ids = page_ids[i : i + batch_size]
 
                 service.users().messages().batchModify(
                     userId="me", body={"ids": ids, "removeLabelIds": ["UNREAD"]}
                 ).execute()
 
                 marked += len(ids)
+                marked_ids.extend(ids)
                 state.mark_read_status["message"] = f"Marked {marked} as read..."
                 state.mark_read_status["marked_count"] = marked
 
@@ -117,6 +138,10 @@ def mark_emails_as_read(count: int = 100, filters: Optional[dict] = None):
             if not page_token:
                 break
 
+        entry = history.record("mark_read", marked_ids, detail=query)
+        state.mark_read_status["history_id"] = entry["id"] if entry else None
+        state.mark_read_status["skipped_protected"] = skipped_total
+
         if marked == 0:
             state.mark_read_status["message"] = "No unread emails found"
             state.mark_read_status["progress"] = 100
@@ -127,6 +152,8 @@ def mark_emails_as_read(count: int = 100, filters: Optional[dict] = None):
         state.mark_read_status["done"] = True
 
     except Exception as e:
+        if marked_ids and not state.mark_read_status.get("history_id"):
+            history.record("mark_read", marked_ids, detail="partial (error)")
         state.mark_read_status["error"] = str(e)
         state.mark_read_status["done"] = True
 

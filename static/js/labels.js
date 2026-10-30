@@ -394,7 +394,7 @@ GmailCleaner.Labels = {
             totalEmails += GmailCleaner.deleteResults[index]?.count || 0;
         });
 
-        if (!confirm(`Archive emails from ${senders.length} sender(s)?\n\nThis will remove ${totalEmails} emails from your inbox but keep them in "All Mail".`)) {
+        if (!(await GmailCleaner.Preview.confirm({ action: 'archive', senders }))) {
             return;
         }
 
@@ -433,7 +433,11 @@ GmailCleaner.Labels = {
                 if (status.error) {
                     alert('Error: ' + status.error);
                 } else {
-                    alert(`Archived ${status.archived_count} emails from ${status.total_senders} sender(s)`);
+                    GmailCleaner.Safety.showUndoToast(
+                        status.message,
+                        status.history_id,
+                        GmailCleaner.Safety.skippedNote(status)
+                    );
                 }
             } else {
                 setTimeout(() => this.pollArchiveStatus(), 300);

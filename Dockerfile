@@ -1,30 +1,35 @@
+FROM ghcr.io/astral-sh/uv:0.9.7 AS uv
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Unbuffered Python output (for Docker logs)
-ENV PYTHONUNBUFFERED=1
+# Unbuffered Python output (for Docker logs), web auth mode for Docker
+ENV PYTHONUNBUFFERED=1 \
+    WEB_AUTH=true \
+    UV_COMPILE_BYTECODE=1
 
-# Enable web auth mode for Docker (binds OAuth to 0.0.0.0)
-ENV WEB_AUTH=true
+# uv pinned to a fixed version (not :latest)
+COPY --from=uv /uv /usr/local/bin/uv
 
-# Install uv for faster package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Copy dependency files and README (required by pyproject.toml)
+# Dependencies only, exact versions from the lockfile, no test tools
 COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev
 
-# Install dependencies only (not the app itself)
-RUN uv sync --frozen
-
-# Copy application
+# Application
 COPY . .
 
-# Remove any existing tokens (user should mount their own)
-RUN rm -f token.json
+# Never ship a token; run as an unprivileged user that owns only /app/data
+RUN rm -f token.json \
+ && useradd --uid 1000 --create-home appuser \
+ && mkdir -p /app/data \
+ && chown -R appuser:appuser /app/data
+USER appuser
 
-# Expose ports: 8766 for web UI, 8767 for OAuth callback
+# 8766 web UI, 8767 OAuth callback (only needed when the browser is on the same machine)
 EXPOSE 8766 8767
 
-# Run with uvicorn (FastAPI)
-CMD ["uv", "run", "python", "main.py"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/healthz', timeout=4)"]
+
+CMD ["/app/.venv/bin/python", "main.py"]

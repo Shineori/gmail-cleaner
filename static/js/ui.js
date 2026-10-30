@@ -53,6 +53,11 @@ GmailCleaner.UI = {
         if (viewName === 'markread') {
             GmailCleaner.MarkRead.refreshUnreadCount();
         }
+
+        // Load protected senders + history when opening the Safety view
+        if (viewName === 'safety' && GmailCleaner.Safety) {
+            GmailCleaner.Safety.refresh();
+        }
     },
 
     escapeHtml(text) {

@@ -95,17 +95,27 @@ class TestSuccessfulOAuthFlow:
             return False
 
         mock_exists.side_effect = exists_side_effect
+        mock_settings.oauth_external_port = None
 
         mock_flow_instance = Mock()
         mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-        mock_flow_instance.run_local_server.return_value = Mock()
+        mock_flow_instance.authorization_url.return_value = (
+            "https://accounts.google.com/o/oauth2/auth?x=1",
+            "state-123",
+        )
 
-        service, error = auth.get_gmail_service()
+        # Web mode now always uses the manual callback server (so a pasted
+        # redirect address can finish sign-in on a server). Stop the flow at
+        # server creation and check what it tried to bind.
+        with patch(
+            "app.services.auth.HTTPServer", side_effect=RuntimeError("stop here")
+        ) as mock_server:
+            auth.get_gmail_service()
 
-        # Verify bind_address is 0.0.0.0 for web auth mode
-        mock_flow_instance.run_local_server.assert_called_once()
-        call_kwargs = mock_flow_instance.run_local_server.call_args[1]
-        assert call_kwargs.get("bind_addr") == "0.0.0.0"
+        mock_flow_instance.run_local_server.assert_not_called()
+        mock_server.assert_called_once()
+        assert mock_server.call_args[0][0] == ("0.0.0.0", 8767)
+        assert mock_flow_instance.redirect_uri == "http://localhost:8767/"
 
     @patch("app.services.auth.settings")
     @patch("os.path.exists")

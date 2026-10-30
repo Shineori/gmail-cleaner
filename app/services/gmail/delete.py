@@ -11,8 +11,10 @@ from collections import defaultdict
 from typing import Optional
 
 from app.core import state
+from app.services import history, protected
 from app.services.auth import get_gmail_service
 from app.services.gmail.helpers import build_gmail_query, get_sender_info, get_subject
+from app.services.gmail.safety import filter_protected_ids
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +204,25 @@ def delete_emails_by_sender(sender: str) -> dict:
             "message": "Invalid sender format. Must be a valid email address or domain.",
         }
 
+    try:
+        protected_entries = protected.load()
+    except protected.ProtectedListError as e:
+        return {
+            "success": False,
+            "deleted": 0,
+            "size_freed": 0,
+            "message": f"Protected senders list is unreadable, nothing was deleted ({e})",
+        }
+
+    if protected.is_protected(sender, protected_entries):
+        return {
+            "success": False,
+            "deleted": 0,
+            "size_freed": 0,
+            "protected": True,
+            "message": f"{sender} is on your protected senders list, nothing was deleted",
+        }
+
     # Get size info from cached results before deleting
     size_freed = 0
     for r in state.delete_scan_results:
@@ -214,8 +235,8 @@ def delete_emails_by_sender(sender: str) -> dict:
         return {"success": False, "deleted": 0, "size_freed": 0, "message": error}
 
     try:
-        # Find all emails from sender
-        query = f"from:{sender}"
+        # Find all emails from sender (protected senders excluded)
+        query = protected.with_protection(f"from:{sender}", protected_entries)
         results = (
             service.users()
             .messages()
@@ -248,8 +269,10 @@ def delete_emails_by_sender(sender: str) -> dict:
 
         # Batch delete (move to trash)
         ids = [msg["id"] for msg in messages]
+        ids, skipped = filter_protected_ids(service, ids, protected_entries)
         batch_size = 100
         deleted = 0
+        trashed_ids: list[str] = []
 
         for i in range(0, len(ids), batch_size):
             batch = ids[i : i + batch_size]
@@ -257,6 +280,9 @@ def delete_emails_by_sender(sender: str) -> dict:
                 userId="me", body={"ids": batch, "addLabelIds": ["TRASH"]}
             ).execute()
             deleted += len(batch)
+            trashed_ids.extend(batch)
+
+        entry = history.record("trash", trashed_ids, [sender])
 
         # Remove sender from cached results
         state.delete_scan_results = [
@@ -267,7 +293,10 @@ def delete_emails_by_sender(sender: str) -> dict:
             "success": True,
             "deleted": deleted,
             "size_freed": size_freed,
-            "message": f"Moved {deleted} emails to trash",
+            "skipped_protected": skipped,
+            "history_id": entry["id"] if entry else None,
+            "message": f"Moved {deleted} emails to trash"
+            + (f" ({skipped} protected emails skipped)" if skipped else ""),
         }
 
     except Exception as e:
@@ -334,6 +363,26 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
         state.delete_bulk_status["error"] = "No senders specified"
         return
 
+    try:
+        protected_entries = protected.load()
+    except protected.ProtectedListError as e:
+        state.delete_bulk_status["done"] = True
+        state.delete_bulk_status["error"] = (
+            f"Protected senders list is unreadable, nothing was deleted ({e})"
+        )
+        return
+
+    skipped_senders = [s for s in senders if protected.is_protected(s, protected_entries)]
+    senders = [s for s in senders if s not in skipped_senders]
+    state.delete_bulk_status["skipped_senders"] = skipped_senders
+    if not senders:
+        state.delete_bulk_status["progress"] = 100
+        state.delete_bulk_status["done"] = True
+        state.delete_bulk_status["message"] = (
+            "All selected senders are protected, nothing was deleted"
+        )
+        return
+
     total_senders = len(senders)
     state.delete_bulk_status["total_senders"] = total_senders
     state.delete_bulk_status["message"] = "Collecting emails to delete..."
@@ -356,7 +405,7 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
         state.delete_bulk_status["message"] = f"Finding emails from {sender}..."
 
         try:
-            query = f"from:{sender}"
+            query = protected.with_protection(f"from:{sender}", protected_entries)
             results = (
                 service.users()
                 .messages()
@@ -389,12 +438,31 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
         state.delete_bulk_status["message"] = "No emails found to delete"
         return
 
+    # Safety net: drop anything whose real sender is protected
+    all_message_ids = list(dict.fromkeys(all_message_ids))
+    try:
+        all_message_ids, skipped = filter_protected_ids(
+            service, all_message_ids, protected_entries
+        )
+    except Exception as e:
+        state.delete_bulk_status["progress"] = 100
+        state.delete_bulk_status["done"] = True
+        state.delete_bulk_status["error"] = f"Safety check failed, nothing was deleted: {e}"
+        return
+    state.delete_bulk_status["skipped_protected"] = skipped
+    if not all_message_ids:
+        state.delete_bulk_status["progress"] = 100
+        state.delete_bulk_status["done"] = True
+        state.delete_bulk_status["message"] = "No emails found to delete"
+        return
+
     # Phase 2: Batch delete all collected IDs (larger batches = fewer API calls)
     total_emails = len(all_message_ids)
     state.delete_bulk_status["message"] = f"Deleting {total_emails} emails..."
 
     batch_size = 1000  # Gmail allows up to 1000 per batchModify
     deleted = 0
+    trashed_ids: list[str] = []
 
     try:
         for i in range(0, total_emails, batch_size):
@@ -403,6 +471,7 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
                 userId="me", body={"ids": batch, "addLabelIds": ["TRASH"]}
             ).execute()
             deleted += len(batch)
+            trashed_ids.extend(batch)
             state.delete_bulk_status["deleted_count"] = deleted
             # Progress: 40-100% for deleting
             state.delete_bulk_status["progress"] = 40 + int(
@@ -413,6 +482,9 @@ def delete_emails_bulk_background(senders: list[str]) -> None:
             )
     except Exception as e:
         errors.append(f"Batch delete error: {str(e)}")
+
+    entry = history.record("trash", trashed_ids, senders)
+    state.delete_bulk_status["history_id"] = entry["id"] if entry else None
 
     # Remove deleted senders from cached scan results
     state.delete_scan_results = [

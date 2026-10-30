@@ -31,3 +31,7 @@ coverage.xml
 
 # GitHub Copilot instructions (user specific)
 .github/copilot-instructions.md
+
+# Fork: local runtime state (token, protected list, history)
+data/
+.venv/

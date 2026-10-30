@@ -70,19 +70,6 @@ GmailCleaner.Auth = {
                 return;
             }
 
-            if (status.web_auth_mode) {
-                const msg = `Docker detected! To sign in:
-
-1. Check Docker logs for the authorization URL:
-   docker logs cleanup_email-gmail-cleaner-1
-
-2. Copy the URL and open it in your browser
-
-3. After authorizing, you'll be signed in automatically.
-
-(Or generate token.json locally and mount it)`;
-                alert(msg);
-            }
 
             const signInResp = await fetch('/api/sign-in', { method: 'POST' });
             const signInResult = await signInResp.json();
@@ -93,6 +80,12 @@ GmailCleaner.Auth = {
                 return;
             }
 
+            // On a server, Google's redirect can't reach the app directly,
+            // so show the link + "paste the address" panel.
+            if (status.web_auth_mode) {
+                GmailCleaner.RemoteSignIn.show();
+            }
+
             this.pollStatus();
         } catch (error) {
             alert('Error signing in: ' + error.message);
@@ -101,7 +94,7 @@ GmailCleaner.Auth = {
     },
 
     async pollStatus(attempts = 0) {
-        const maxAttempts = 120;
+        const maxAttempts = 300; // matches the 5-minute server-side sign-in window
         const signInBtn = document.getElementById('signInBtn');
 
         try {
@@ -109,6 +102,7 @@ GmailCleaner.Auth = {
             const status = await response.json();
 
             if (status.logged_in) {
+                if (GmailCleaner.RemoteSignIn) GmailCleaner.RemoteSignIn.hide();
                 this.updateUI(status);
             } else if (attempts < maxAttempts) {
                 setTimeout(() => this.pollStatus(attempts + 1), 1000);

@@ -164,7 +164,10 @@ GmailCleaner.Scanner = {
             let actionButton;
             let typeLabel;
 
-            if (r.type === 'one-click') {
+            if (r.protected) {
+                actionButton = `<button class="unsub-btn is-protected-btn" disabled>🛡️ Protected</button>`;
+                typeLabel = `<span class="protected-badge">Protected</span>`;
+            } else if (r.type === 'one-click') {
                 actionButton = `<button class="unsub-btn one-click" id="unsub-${i}" onclick="GmailCleaner.Scanner.autoUnsubscribe(${i})">✓ Unsubscribe</button>`;
                 typeLabel = `<span class="type-badge type-auto">Auto</span>`;
             } else {
@@ -174,7 +177,7 @@ GmailCleaner.Scanner = {
 
             item.innerHTML = `
                 <label class="checkbox-wrapper result-checkbox">
-                    <input type="checkbox" class="result-cb" data-index="${i}" data-type="${r.type || 'manual'}">
+                    <input type="checkbox" class="result-cb" data-index="${i}" data-type="${r.type || 'manual'}" ${r.protected ? 'disabled' : ''}>
                     <span class="checkmark"></span>
                 </label>
                 <div class="result-content">
@@ -239,7 +242,7 @@ GmailCleaner.Scanner = {
 
     toggleSelectAll() {
         const selectAll = document.getElementById('selectAll');
-        document.querySelectorAll('.result-cb').forEach(cb => {
+        document.querySelectorAll('.result-cb:not(:disabled)').forEach(cb => {
             cb.checked = selectAll.checked;
         });
     },

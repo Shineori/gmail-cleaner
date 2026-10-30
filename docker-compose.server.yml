@@ -1,0 +1,46 @@
+# Gmail Cleaner (Shineori fork) - always-on server behind Cloudflare Access
+#
+# Cloudflare Tunnel -> this container, with a Cloudflare Access application
+# (Authentik as the identity provider) in front. The app also checks the
+# Access token on every request, so hitting the port directly gets a 403.
+#
+# Setup: SELF_HOSTING.md. Values come from a .env file next to this one:
+#
+#   BIND_IP=192.168.x.x                         # LAN IP your tunnel connects to
+#   ACCESS_TEAM_DOMAIN=yourteam.cloudflareaccess.com
+#   ACCESS_AUD=<Application Audience (AUD) tag>
+#   ACCESS_ALLOWED_EMAILS=you@example.com        # optional extra check
+
+services:
+  gmail-cleaner:
+    build: .
+    image: gmail-cleaner:server
+    container_name: gmail-cleaner
+
+    ports:
+      # Web UI only. The OAuth callback port is NOT published: on a server
+      # you finish Google sign-in by pasting the redirect address instead.
+      - "${BIND_IP:-127.0.0.1}:8766:8766"
+
+    volumes:
+      - type: bind
+        source: ./credentials.json
+        target: /app/credentials.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data
+        target: /app/data
+
+    environment:
+      - WEB_AUTH=true
+      - ACCESS_TEAM_DOMAIN=${ACCESS_TEAM_DOMAIN:?set ACCESS_TEAM_DOMAIN in .env}
+      - ACCESS_AUD=${ACCESS_AUD:?set ACCESS_AUD in .env}
+      - ACCESS_ALLOWED_EMAILS=${ACCESS_ALLOWED_EMAILS:-}
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped

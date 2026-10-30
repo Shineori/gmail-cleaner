@@ -154,18 +154,19 @@ GmailCleaner.Delete = {
 
         GmailCleaner.deleteResults.forEach((r, i) => {
             const item = document.createElement('div');
-            item.className = 'result-item';
+            const isProtected = !!r.protected;
+            item.className = 'result-item' + (isProtected ? ' is-protected' : '');
 
             const dateRange = this.formatDateRange(r.first_date, r.last_date);
             const dateRangeDisplay = dateRange ? `<div class="result-date-range">${dateRange}</div>` : '';
 
             item.innerHTML = `
                 <label class="checkbox-wrapper result-checkbox">
-                    <input type="checkbox" class="delete-cb" data-index="${i}" data-email="${GmailCleaner.UI.escapeHtml(r.email)}">
+                    <input type="checkbox" class="delete-cb" data-index="${i}" data-email="${GmailCleaner.UI.escapeHtml(r.email)}" ${isProtected ? 'disabled title="Protected sender"' : ''}>
                     <span class="checkmark"></span>
                 </label>
                 <div class="result-content">
-                    <div class="result-sender">${GmailCleaner.UI.escapeHtml(r.email)}</div>
+                    <div class="result-sender">${GmailCleaner.UI.escapeHtml(r.email)}${isProtected ? '<span class="protected-badge">🛡️ Protected</span>' : ''}</div>
                     <div class="result-subject">${GmailCleaner.UI.escapeHtml(r.subjects[0] || 'No subject')}</div>
                     <div class="result-meta">
                         ${dateRangeDisplay}
@@ -173,13 +174,21 @@ GmailCleaner.Delete = {
                     </div>
                 </div>
                 <div class="result-actions">
-                    <button class="unsub-btn delete-btn" id="delete-${i}" onclick="GmailCleaner.Delete.deleteSenderEmails(${i})">
-                        Delete ${r.count}
-                    </button>
+                    ${isProtected
+                        ? `<button class="unsub-btn is-protected-btn" disabled>Protected</button>`
+                        : `<button class="protect-btn" title="Protect this sender" onclick="GmailCleaner.Delete.protectSender(${i})">🛡️</button>
+                           <button class="unsub-btn delete-btn" id="delete-${i}" onclick="GmailCleaner.Delete.deleteSenderEmails(${i})">
+                               Delete ${r.count}
+                           </button>`}
                 </div>
             `;
             resultsList.appendChild(item);
         });
+    },
+
+    async protectSender(index) {
+        const r = GmailCleaner.deleteResults[index];
+        if (r) await GmailCleaner.Safety.addProtected(r.email);
     },
 
     setActionButtonsEnabled(enabled) {
@@ -200,7 +209,7 @@ GmailCleaner.Delete = {
 
     toggleSelectAll() {
         const selectAll = document.getElementById('deleteSelectAll');
-        document.querySelectorAll('.delete-cb').forEach(cb => {
+        document.querySelectorAll('.delete-cb:not(:disabled)').forEach(cb => {
             cb.checked = selectAll.checked;
         });
     },
@@ -209,7 +218,7 @@ GmailCleaner.Delete = {
         const r = GmailCleaner.deleteResults[index];
         const btn = document.getElementById('delete-' + index);
 
-        if (!confirm(`Delete ALL ${r.count} emails from ${r.email}?\n\nThis will move them to Trash.`)) {
+        if (!(await GmailCleaner.Preview.confirm({ action: 'trash', senders: [r.email] }))) {
             return;
         }
 
@@ -234,6 +243,10 @@ GmailCleaner.Delete = {
                 btn.classList.remove('btn-deleting');
                 btn.innerHTML = '✓ Deleted!';
                 btn.classList.add('success');
+                GmailCleaner.Safety.showUndoToast(
+                    result.message,
+                    result.history_id
+                );
                 setTimeout(() => {
                     GmailCleaner.deleteResults = GmailCleaner.deleteResults.filter((_, i) => i !== index);
                     this.displayResults();
@@ -269,7 +282,7 @@ GmailCleaner.Delete = {
             senderEmails.push(r.email);
         });
 
-        if (!confirm(`Delete ${totalEmails} emails from ${checkboxes.length} senders?\n\nThis will move them to Trash.`)) {
+        if (!(await GmailCleaner.Preview.confirm({ action: 'trash', senders: senderEmails }))) {
             return;
         }
 
@@ -319,6 +332,11 @@ GmailCleaner.Delete = {
                 this.hideDeleteOverlay();
 
                 if (!status.error) {
+                    GmailCleaner.Safety.showUndoToast(
+                        status.message,
+                        status.history_id,
+                        GmailCleaner.Safety.skippedNote(status)
+                    );
                     checkboxes.forEach(cb => {
                         const index = parseInt(cb.dataset.index);
                         const btn = document.getElementById('delete-' + index);

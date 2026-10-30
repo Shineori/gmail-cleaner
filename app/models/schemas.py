@@ -4,7 +4,7 @@ Pydantic Models - Request/Response Schemas
 Data validation and serialization.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 import re
 
@@ -189,6 +189,30 @@ class MarkImportantRequest(BaseModel):
     important: bool = Field(
         default=True, description="True to mark important, False to unmark"
     )
+
+
+# ----- Safety Feature Models -----
+
+
+class ProtectedSenderRequest(BaseModel):
+    """Add or remove a protected sender (address or domain)."""
+
+    sender: str = Field(..., min_length=1, max_length=254)
+
+
+class PreviewRequest(BaseModel):
+    """Dry run for a trash / archive / mark-read action."""
+
+    action: Literal["trash", "archive", "mark_read"]
+    senders: list[str] = Field(default=[], max_length=500)
+    count: int = Field(default=0, ge=0, le=100000)
+    filters: Optional[FiltersModel] = None
+
+
+class OAuthPasteRequest(BaseModel):
+    """The address Google redirected to, pasted back in by the user."""
+
+    url: str = Field(..., min_length=10, max_length=4096)
 
 
 # ----- Response Models -----

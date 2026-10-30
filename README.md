@@ -1,5 +1,7 @@
 # Gmail Bulk Unsubscribe & Cleanup Tool
 
+> **🛡️ Shineori fork.** Adds protected senders, undo + action history, previews before every bulk action, and an optional Cloudflare Access login gate for running it on a server. See **[SELF_HOSTING.md](SELF_HOSTING.md)** for what changed and how to run it. Everything below is the upstream README.
+
 > Note: Guys i am in some me time, so cant able to address all issues, prs, extremely sorry for all delayed response, please give me an month or maz 2 month to figure out this and come back, thank you for all understanding
 
 A **free**, privacy-focused tool to bulk unsubscribe from emails, delete emails by sender, and mark emails as read. No subscriptions, no data collection - runs 100% on your machine.

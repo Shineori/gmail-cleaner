@@ -37,6 +37,10 @@ GmailCleaner.MarkRead = {
 
         const filters = GmailCleaner.Filters.get();
 
+        if (!(await GmailCleaner.Preview.confirm({ action: 'mark_read', count, filters }))) {
+            return;
+        }
+
         btn.disabled = true;
         btn.innerHTML = `
             <svg class="spinner" viewBox="0 0 24 24" width="18" height="18">
@@ -78,8 +82,10 @@ GmailCleaner.MarkRead = {
                 if (!status.error) {
                     // Show toast notification
                     if (status.marked_count > 0) {
-                        GmailCleaner.UI.showSuccessToast(
-                            `Successfully marked ${status.marked_count.toLocaleString()} emails as read. Your inbox is cleaner now!`
+                        GmailCleaner.Safety.showUndoToast(
+                            `Marked ${status.marked_count.toLocaleString()} emails as read`,
+                            status.history_id,
+                            GmailCleaner.Safety.skippedNote(status)
                         );
                     } else {
                         GmailCleaner.UI.showInfoToast('No unread emails found matching the selected filters.');

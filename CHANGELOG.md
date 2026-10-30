@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Shineori fork)
+- Protected senders list (addresses or domains, subdomains included), enforced server-side on delete, archive, mark-read and unsubscribe, with a second From-header check before any change; fails closed if the list file is unreadable
+- Action history with undo for trash, archive and mark-read (`data/history.json`, last 50 actions)
+- Preview dialog with exact counts, per-sender breakdown, skipped protected senders and sample emails before every bulk action
+- Optional Cloudflare Access JWT verification (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ACCESS_ALLOWED_EMAILS`) and cross-site request blocking
+- Remote sign-in: paste Google's redirect address to finish OAuth when the app runs on a server
+- `/healthz` endpoint, `docker-compose.server.yml`, `SELF_HOSTING.md`
+
+### Changed (Shineori fork)
+- Dockerfile runs as non-root, pins `uv`, installs without dev dependencies, adds a healthcheck
+- Litepicker served locally (pinned 2.0.12) instead of `@latest` from a CDN
+- Header and action row no longer overflow at phone width
+
 ### Added
 - CodeRabbit AI code review integration with `.coderabbit.yaml` configuration
 - Pre-commit hooks for code quality checks (ruff, bandit, trailing whitespace, etc.)

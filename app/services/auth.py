@@ -28,6 +28,72 @@ logger = logging.getLogger(__name__)
 # Track auth in progress
 _auth_in_progress = {"active": False}
 
+# While a web-mode sign-in is waiting for Google's redirect, these let the
+# "paste the address" endpoint hand the code to the waiting flow.
+_pending_callback: dict = {"event": None, "lock": None, "data": None}
+_pending_callback_lock = threading.Lock()
+
+
+def submit_pasted_callback(url: str) -> dict:
+    """Finish a pending sign-in using the redirect address the user pasted.
+
+    Used when the app runs on a server: Google sends the browser to
+    http://localhost:8767/?code=...&state=..., which doesn't load on the
+    user's own computer, so they paste that address into the app instead.
+    The CSRF state must match the sign-in that is currently waiting.
+    """
+    from urllib.parse import parse_qs, urlparse
+    import hmac
+
+    with _pending_callback_lock:
+        event = _pending_callback["event"]
+        lock = _pending_callback["lock"]
+        data = _pending_callback["data"]
+
+    if event is None or event.is_set():
+        return {"success": False, "message": "No sign-in is waiting. Click Sign in first."}
+
+    try:
+        params = parse_qs(urlparse(url.strip()).query)
+    except ValueError:
+        return {"success": False, "message": "That doesn't look like a valid address"}
+
+    incoming_state = (params.get("state") or [None])[0]
+    with state.oauth_state_lock:
+        stored_state = state.oauth_state.get("state")
+
+    if (
+        not incoming_state
+        or not stored_state
+        or not hmac.compare_digest(incoming_state, stored_state)
+    ):
+        return {
+            "success": False,
+            "message": "This address is from a different sign-in attempt. Click Sign in again and use the newest link.",
+        }
+
+    if "error" in params:
+        err = (params.get("error") or ["unknown"])[0]
+        with lock:
+            data["error"] = err
+            with state.oauth_state_lock:
+                state.oauth_state["state"] = None
+            event.set()
+        return {"success": False, "message": f"Google returned an error: {err}"}
+
+    code = (params.get("code") or [None])[0]
+    if not code:
+        return {"success": False, "message": "No authorization code found in that address"}
+
+    with lock:
+        if event.is_set():
+            return {"success": False, "message": "This sign-in was already completed"}
+        data["code"] = code
+        with state.oauth_state_lock:
+            state.oauth_state["state"] = None
+        event.set()
+    return {"success": True, "message": "Code received, finishing sign-in..."}
+
 
 def _is_file_empty(file_path: str) -> bool:
     """Check if a file exists and is empty.
@@ -330,7 +396,9 @@ def get_gmail_service():
 
                     # If external port is different, manually handle OAuth flow
                     # because run_local_server() constructs redirect URI from port parameter
-                    if redirect_port != settings.oauth_port:
+                    # Web mode always uses the manual flow so a pasted redirect
+                    # address can finish sign-in when the app runs on a server.
+                    if redirect_port != settings.oauth_port or is_web_auth_mode():
                         # Validate oauth_host is not empty
                         if not settings.oauth_host or not settings.oauth_host.strip():
                             raise ValueError(
@@ -388,6 +456,13 @@ def get_gmail_service():
                                 callback_data,
                                 *args,
                                 **kwargs,
+                            )
+
+                        with _pending_callback_lock:
+                            _pending_callback.update(
+                                event=callback_event,
+                                lock=callback_lock,
+                                data=callback_data,
                             )
 
                         # Start the callback server with error handling
@@ -490,6 +565,8 @@ def get_gmail_service():
                             new_creds = flow.credentials
 
                         finally:
+                            with _pending_callback_lock:
+                                _pending_callback.update(event=None, lock=None, data=None)
                             # Always close the server, even if an exception occurred
                             if server is not None:
                                 try:

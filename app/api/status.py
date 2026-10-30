@@ -28,7 +28,23 @@ from app.services import (
     get_important_status,
 )
 
+from app.services import protected
+
 router = APIRouter(prefix="/api", tags=["Status"])
+
+
+def _mark_protected(rows: list, key: str) -> list:
+    """Flag scan rows whose sender is on the protected list (for the UI)."""
+    try:
+        entries = protected.load()
+    except protected.ProtectedListError:
+        entries = []
+    return [
+        {**r, "protected": protected.is_protected(str(r.get(key, "")), entries)}
+        if isinstance(r, dict)
+        else r
+        for r in rows
+    ]
 logger = logging.getLogger(__name__)
 
 
@@ -49,7 +65,7 @@ async def api_status():
 async def api_results():
     """Get email scan results."""
     try:
-        return get_scan_results()
+        return _mark_protected(get_scan_results(), "domain")
     except Exception as e:
         logger.exception("Error getting scan results")
         raise HTTPException(
@@ -127,7 +143,7 @@ async def api_delete_scan_status():
 async def api_delete_scan_results():
     """Get delete scan results (senders grouped by count)."""
     try:
-        return get_delete_scan_results()
+        return _mark_protected(get_delete_scan_results(), "email")
     except Exception as e:
         logger.exception("Error getting delete scan results")
         raise HTTPException(
