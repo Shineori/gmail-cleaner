@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # Track auth in progress
 _auth_in_progress = {"active": False}
 
+# Last sign-in failure, shown in the web UI (otherwise it only reached the logs)
+_last_auth_error: dict = {"message": None}
+
 # While a web-mode sign-in is waiting for Google's redirect, these let the
 # "paste the address" endpoint hand the code to the waiting flow.
 _pending_callback: dict = {"event": None, "lock": None, "data": None}
@@ -153,6 +156,8 @@ def get_web_auth_status() -> dict:
         "needs_setup": needs_auth_setup(),
         "web_auth_mode": is_web_auth_mode(),
         "has_credentials": os.path.exists(settings.credentials_file),
+        "credentials_readable": os.access(settings.credentials_file, os.R_OK),
+        "auth_error": _last_auth_error.get("message"),
         "pending_auth_url": state.pending_auth_url.get("url"),
     }
 
@@ -222,6 +227,10 @@ def _get_credentials_path() -> str | None:
             logger.error(
                 f"Failed to read credentials file {settings.credentials_file}: {e}",
                 exc_info=True,
+            )
+            _last_auth_error["message"] = (
+                f"Can't read credentials.json ({e.strerror or e}). The container runs as "
+                "uid 1000, so on the server run: sudo chown 1000:1000 credentials.json"
             )
             return None
 
@@ -294,6 +303,7 @@ def get_gmail_service():
                     "Sign-in already in progress. Please complete the authorization in your browser.",
                 )
 
+            _last_auth_error["message"] = None
             creds_path = _get_credentials_path()
             if not creds_path:
                 # Check if credentials file exists and is empty for more specific error message
@@ -304,6 +314,10 @@ def get_gmail_service():
                         None,
                         "credentials.json file is empty! Please check your credentials.json file and ensure it contains valid OAuth credentials.",
                     )
+                if _last_auth_error.get("message") and os.path.exists(
+                    settings.credentials_file
+                ):
+                    return (None, _last_auth_error["message"])
                 return (
                     None,
                     "credentials.json not found or contains invalid JSON! Please check your credentials.json file and follow setup instructions.",
@@ -311,6 +325,7 @@ def get_gmail_service():
 
             # Start OAuth in background thread so server stays responsive
             _auth_in_progress["active"] = True
+            _last_auth_error["message"] = None
 
             def run_oauth() -> None:
                 try:
@@ -474,6 +489,7 @@ def get_gmail_service():
                                     handler_factory,
                                 )
                             except OSError as e:
+                                _last_auth_error["message"] = str(e)
                                 # Check for port already in use error (platform-independent)
                                 error_str = str(e).lower()
                                 if (
@@ -500,6 +516,7 @@ def get_gmail_service():
 
                                     webbrowser.open(authorization_url)
                                 except Exception as e:
+                                    _last_auth_error["message"] = str(e)
                                     logger.warning(f"Failed to open browser: {e}")
 
                             # Wait for the callback (with timeout)
@@ -520,6 +537,7 @@ def get_gmail_service():
                                 try:
                                     server.handle_request()
                                 except Exception as e:
+                                    _last_auth_error["message"] = str(e)
                                     logger.error(
                                         f"Error handling OAuth callback request: {e}",
                                         exc_info=True,
@@ -553,6 +571,7 @@ def get_gmail_service():
                             try:
                                 flow.fetch_token(code=auth_code)
                             except Exception as e:
+                                _last_auth_error["message"] = str(e)
                                 logger.error(
                                     f"Failed to exchange authorization code for token: {e}",
                                     exc_info=True,
@@ -572,6 +591,7 @@ def get_gmail_service():
                                 try:
                                     server.server_close()
                                 except Exception as e:
+                                    _last_auth_error["message"] = str(e)
                                     logger.warning(
                                         f"Error closing OAuth callback server: {e}"
                                     )
@@ -596,11 +616,14 @@ def get_gmail_service():
                         with open(settings.token_file, "w") as token:
                             token.write(new_creds.to_json())
                         print("OAuth complete! Token saved.")
+                        _last_auth_error["message"] = None
                     except OSError as e:
+                        _last_auth_error["message"] = str(e)
                         logger.error(f"Failed to save token file: {e}", exc_info=True)
                         print(f"OAuth completed but failed to save token: {e}")
                         raise  # Re-raise so outer exception handler can log it
                 except (ValueError, json.JSONDecodeError) as e:
+                    _last_auth_error["message"] = str(e)
                     # JSON parsing errors from OAuth callback (shouldn't happen if credentials were valid)
                     error_msg = str(e)
                     logger.error(
@@ -613,6 +636,7 @@ def get_gmail_service():
                         "Please try signing in again and complete the authorization in your browser."
                     )
                 except RefreshError as e:
+                    _last_auth_error["message"] = str(e)
                     # Token refresh errors
                     logger.error(f"OAuth token exchange failed: {e}", exc_info=True)
                     print(
@@ -620,10 +644,12 @@ def get_gmail_service():
                         "If this persists, check your credentials.json configuration."
                     )
                 except TimeoutError as e:
+                    _last_auth_error["message"] = str(e)
                     # Timeout errors
                     logger.error(f"OAuth timeout: {e}", exc_info=True)
                     print(f"OAuth error: {e}")
                 except OSError as e:
+                    _last_auth_error["message"] = str(e)
                     # Port binding and other OS errors
                     logger.error(f"OAuth system error: {e}", exc_info=True)
                     error_str = str(e)
@@ -638,6 +664,7 @@ def get_gmail_service():
                     else:
                         print(f"OAuth error: System error - {e}")
                 except Exception as e:
+                    _last_auth_error["message"] = str(e)
                     # Other OAuth errors
                     logger.error(f"OAuth error: {e}", exc_info=True)
                     error_str = str(e)

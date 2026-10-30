@@ -61,7 +61,10 @@ class TestAuthEndpoints:
     def test_sign_in(self, mock_get_service, client):
         """POST /api/sign-in should trigger sign-in flow."""
         # Mock to prevent actual OAuth flow and browser opening
-        mock_get_service.return_value = (None, "Not authenticated")
+        mock_get_service.return_value = (
+            None,
+            "Sign-in started. Please complete authorization in your browser.",
+        )
         response = client.post("/api/sign-in")
         assert response.status_code == 200
         data = response.json()

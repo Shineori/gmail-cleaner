@@ -76,7 +76,16 @@ GmailCleaner.Auth = {
 
             if (signInResult.error) {
                 this.resetSignInButton();
-                alert('Sign-in error: ' + signInResult.error);
+                if (status.web_auth_mode && GmailCleaner.RemoteSignIn) {
+                    GmailCleaner.RemoteSignIn.setError(signInResult.error);
+                } else {
+                    alert('Sign-in error: ' + signInResult.error);
+                }
+                return;
+            }
+
+            if (signInResult.status === 'signed_in') {
+                this.checkStatus();
                 return;
             }
 

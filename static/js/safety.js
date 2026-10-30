@@ -367,6 +367,7 @@ GmailCleaner.RemoteSignIn = {
         link.classList.add('disabled');
         link.textContent = 'Preparing Google link...';
 
+        let lastError = null;
         for (let i = 0; i < 20; i++) {
             try {
                 const s = await GmailCleaner.api('/api/web-auth-status');
@@ -374,12 +375,40 @@ GmailCleaner.RemoteSignIn = {
                     link.href = s.pending_auth_url;
                     link.classList.remove('disabled');
                     link.textContent = 'Open Google sign-in ↗';
+                    this.setError(null);
                     return;
                 }
-            } catch (_) { /* keep trying */ }
+                if (s.has_credentials && s.credentials_readable === false) {
+                    lastError = "The app can't read credentials.json. On the server run: sudo chown 1000:1000 credentials.json, then try again.";
+                    break;
+                }
+                if (s.auth_error) {
+                    lastError = s.auth_error;
+                    break;
+                }
+            } catch (e) {
+                lastError = e.message;
+            }
             await new Promise(r => setTimeout(r, 500));
         }
-        link.textContent = 'Could not get the Google link. Try Sign in again.';
+        link.textContent = 'Could not get the Google link.';
+        this.setError(lastError || 'No details were reported. Check: docker logs gmail-cleaner');
+        GmailCleaner.Auth.resetSignInButton();
+    },
+
+    /** Show (or clear) a sign-in problem inside the panel. */
+    setError(message) {
+        const panel = document.getElementById('remoteSignIn');
+        const box = document.getElementById('remoteSignInError');
+        if (!panel || !box) return;
+        if (!message) {
+            box.classList.add('hidden');
+            box.textContent = '';
+            return;
+        }
+        panel.classList.remove('hidden');
+        box.textContent = message;
+        box.classList.remove('hidden');
     },
 
     hide() {

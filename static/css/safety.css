@@ -446,3 +446,13 @@
         min-width: 0;
     }
 }
+
+.remote-error {
+    background: #fce8e6;
+    color: #c5221f;
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    overflow-wrap: anywhere;
+}

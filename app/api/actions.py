@@ -7,6 +7,7 @@ POST endpoints for triggering operations.
 import logging
 from functools import partial
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.models import (
     ScanRequest,
@@ -55,9 +56,18 @@ async def api_scan(request: ScanRequest, background_tasks: BackgroundTasks):
 
 
 @router.post("/sign-in")
-async def api_sign_in(background_tasks: BackgroundTasks):
-    """Trigger OAuth sign-in flow."""
-    background_tasks.add_task(get_gmail_service)
+async def api_sign_in():
+    """Trigger OAuth sign-in flow.
+
+    get_gmail_service() returns quickly (the OAuth wait runs in its own
+    thread), so run it here and pass real problems, like an unreadable
+    credentials.json, back to the page instead of dropping them.
+    """
+    service, error = await run_in_threadpool(get_gmail_service)
+    if service is not None:
+        return {"status": "signed_in"}
+    if error and not error.startswith(("Sign-in started", "Sign-in already in progress")):
+        return {"status": "error", "error": error}
     return {"status": "signing_in"}
 
 

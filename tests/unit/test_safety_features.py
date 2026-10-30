@@ -576,3 +576,50 @@ class TestOAuthPaste:
 
         r = auth.submit_pasted_callback("http://localhost:8767/?state=x&code=y")
         assert r["success"] is False
+
+
+# ------------------------------------------- sign-in errors reach the page
+
+
+class TestSignInErrors:
+    def test_unreadable_credentials_message(self, tmp_path, monkeypatch):
+        from app.services import auth
+
+        # conftest hides files named credentials.json, so use another name
+        creds = tmp_path / "client_secret.json"
+        creds.write_text('{"installed": {}}')
+        monkeypatch.setattr(settings, "credentials_file", str(creds))
+        monkeypatch.setattr(settings, "token_file", str(tmp_path / "tok.json"))
+        monkeypatch.setattr(auth, "_auth_in_progress", {"active": False})
+
+        real_open = open
+
+        def fake_open(path, *a, **k):
+            if str(path) == str(creds):
+                raise PermissionError(13, "Permission denied")
+            return real_open(path, *a, **k)
+
+        with patch("builtins.open", side_effect=fake_open):
+            service, error = auth.get_gmail_service()
+
+        assert service is None
+        assert "chown 1000:1000 credentials.json" in error
+        assert auth.get_web_auth_status()["auth_error"] == error
+
+    def test_sign_in_api_returns_error(self):
+        from app.api import actions
+        from app.main import app
+
+        msg = "Can't read credentials.json (Permission denied)."
+        with patch.object(actions, "get_gmail_service", return_value=(None, msg)):
+            r = TestClient(app).post("/api/sign-in")
+        assert r.json() == {"status": "error", "error": msg}
+
+    def test_sign_in_api_started(self):
+        from app.api import actions
+        from app.main import app
+
+        started = (None, "Sign-in started. Please complete authorization in your browser.")
+        with patch.object(actions, "get_gmail_service", return_value=started):
+            r = TestClient(app).post("/api/sign-in")
+        assert r.json() == {"status": "signing_in"}
